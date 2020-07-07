@@ -21,6 +21,11 @@ namespace ZXing.Mobile.CameraAccess
 		int cameraId;
 		IScannerSessionHost scannerHost;
 
+		private PinchListener pinchlistener;
+		public ScaleGestureDetector ScaleGestureDetector {private set; get;}
+
+		private List<FastJavaByteArray> Buff;
+
 		public CameraController(SurfaceView surfaceView, CameraEventsListener cameraEventListener, IScannerSessionHost scannerHost)
 		{
 			context = surfaceView.Context;
@@ -75,13 +80,23 @@ namespace ZXing.Mobile.CameraAccess
 				var bitsPerPixel = ImageFormat.GetBitsPerPixel(previewParameters.PreviewFormat);
 
 
+				Buff = new List<FastJavaByteArray>();
+
 				var bufferSize = (previewSize.Width * previewSize.Height * bitsPerPixel) / 8;
 				const int NUM_PREVIEW_BUFFERS = 5;
 				for (uint i = 0; i < NUM_PREVIEW_BUFFERS; ++i)
 				{
-					using (var buffer = new FastJavaByteArray(bufferSize))
-						Camera.AddCallbackBuffer(buffer);
+					var buffer = new FastJavaByteArray(bufferSize);
+					
+					Camera.AddCallbackBuffer(buffer);
+					Buff.Add(buffer);
+					
 				}
+
+				//Pinch Gesture
+				pinchlistener = new PinchListener { Camera = Camera, PreviewCallback = cameraEventListener, Buff = Buff };
+				scaleGestureDetector = new ScaleGestureDetector(context, pinchlistener);
+
 
 				Camera.StartPreview();
 
@@ -137,6 +152,14 @@ namespace ZXing.Mobile.CameraAccess
 
 					Android.Util.Log.Debug(MobileBarcodeScanner.TAG, $"Calling SetPreviewDisplay: null");
 					Camera.SetPreviewDisplay(null);
+
+					//Dispose Buffer
+					Buff?.ForEach(x => x.Dispose());
+					Buff?.Clear();
+
+					pinchlistener.Dispose();
+					scaleGestureDetector.Dispose();
+
 				}
 				catch (Exception ex)
 				{
@@ -429,4 +452,62 @@ namespace ZXing.Mobile.CameraAccess
 			return correctedDegrees;
 		}
 	}
+
+	class PinchListener : ScaleGestureDetector.SimpleOnScaleGestureListener
+	{
+		public Camera Camera { get; set; }
+		public List<FastJavaByteArray> Buff;
+		public CameraEventsListener PreviewCallback { get; set; }
+
+		public override bool OnScale(ScaleGestureDetector detector)
+		{
+
+			var param = Camera.GetParameters();
+
+			if (Math.Abs(detector.ScaleFactor - 1.0f) < 0.01f)
+			{
+				return base.OnScale(detector);
+			}
+			if (detector.ScaleFactor > 1.0)
+			{
+				param.Zoom += (int)Math.Round(2.0 * detector.ScaleFactor, 0);
+
+				if (param.Zoom == 0)
+				{
+					param.Zoom = 2;
+				}
+				if (param.Zoom > param.MaxZoom)
+				{
+					param.Zoom = param.MaxZoom;
+				}
+			}
+			else
+			{
+				//param.Zoom -= 3;
+				param.Zoom -= (int)Math.Round(4.0 * detector.ScaleFactor, 0);
+				if (param.Zoom < 0)
+				{
+					param.Zoom = 0;
+				}
+			}
+
+			Camera.SetParameters(param);
+
+			return base.OnScale(detector);
+		}
+		public override bool OnScaleBegin(ScaleGestureDetector detector)
+		{
+			Camera.AddCallbackBuffer(null);
+			Camera.SetPreviewCallbackWithBuffer(null);
+			return base.OnScaleBegin(detector);
+		}
+		public override void OnScaleEnd(ScaleGestureDetector detector)
+		{
+			Camera.SetNonMarshalingPreviewCallback(PreviewCallback);
+			Buff.ForEach(buff => Camera.AddCallbackBuffer(buff));
+			base.OnScaleEnd(detector);
+		}
+	}
+
+
 }

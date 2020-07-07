@@ -79,7 +79,9 @@ namespace ZXing.Mobile
 					break;
 			}
 
-			return r;
+			return cameraAnalyzer.ScaleGestureDetector.OnTouchEvent(e) && r;
+
+			//return r;
 		}
 
 		public void AutoFocus()

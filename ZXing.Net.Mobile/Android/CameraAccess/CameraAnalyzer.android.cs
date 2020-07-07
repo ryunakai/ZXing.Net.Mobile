@@ -57,6 +57,9 @@ namespace ZXing.Mobile.CameraAccess
 		public void RefreshCamera()
 			=> cameraController.RefreshCamera();
 
+		public ScaleGestureDetector ScaleGestureDetector
+		{ get { return cameraController.ScaleGestureDetector; } }
+
 		bool CanAnalyzeFrame
 		{
 			get
